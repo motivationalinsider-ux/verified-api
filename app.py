@@ -18,28 +18,22 @@ def init_db():
         full_name TEXT,
         company_name TEXT,
         role TEXT,
+        is_verified TEXT,
         created_at TEXT
     )''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS verifications (
+    c.execute('''CREATE TABLE IF NOT EXISTS rfqs (
         id TEXT PRIMARY KEY,
-        user_id TEXT,
-        cipc_file TEXT,
-        director_name TEXT,
-        director_id TEXT,
-        status TEXT,
-        submitted_at TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS reports (
-        id TEXT PRIMARY KEY,
-        reporter_name TEXT,
-        reporter_email TEXT,
-        reported_company TEXT,
-        reason TEXT,
-        details TEXT,
-        status TEXT,
-        submitted_at TEXT
+        buyer_id TEXT,
+        buyer_name TEXT,
+        commodity TEXT,
+        commodity_display TEXT,
+        quantity TEXT,
+        location TEXT,
+        location_display TEXT,
+        description TEXT,
+        timeline TEXT,
+        created_at TEXT
     )''')
     conn.commit()
     conn.close()
@@ -68,8 +62,8 @@ def signup():
     c = conn.cursor()
     
     try:
-        c.execute("INSERT INTO users (id, email, password, full_name, company_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                  (user_id, email, password, full_name, company_name, role, created_at))
+        c.execute("INSERT INTO users (id, email, password, full_name, company_name, role, is_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                  (user_id, email, password, full_name, company_name, role, 'pending', created_at))
         conn.commit()
         conn.close()
         return jsonify({"success": True, "message": "User created", "user_id": user_id})
@@ -85,7 +79,7 @@ def login():
     
     conn = sqlite3.connect('verified.db')
     c = conn.cursor()
-    c.execute("SELECT id, email, full_name, company_name, role FROM users WHERE email = ? AND password = ?", (email, password))
+    c.execute("SELECT id, email, full_name, company_name, role, is_verified FROM users WHERE email = ? AND password = ?", (email, password))
     user = c.fetchone()
     conn.close()
     
@@ -97,7 +91,8 @@ def login():
                 "email": user[1],
                 "full_name": user[2],
                 "company_name": user[3],
-                "role": user[4]
+                "role": user[4],
+                "is_verified": user[5]
             }
         })
     else:
@@ -107,16 +102,16 @@ def login():
 def get_users():
     conn = sqlite3.connect('verified.db')
     c = conn.cursor()
-    c.execute("SELECT id, email, full_name, company_name, role FROM users")
+    c.execute("SELECT id, email, full_name, company_name, role, is_verified FROM users")
     users = c.fetchall()
     conn.close()
-    return jsonify({"users": [{"id": u[0], "email": u[1], "name": u[2], "company": u[3], "role": u[4]} for u in users]})
+    return jsonify({"users": [{"id": u[0], "email": u[1], "name": u[2], "company": u[3], "role": u[4], "is_verified": u[5]} for u in users]})
 
 @app.route('/api/user/<user_id>', methods=['GET'])
 def get_user(user_id):
     conn = sqlite3.connect('verified.db')
     c = conn.cursor()
-    c.execute("SELECT id, email, full_name, company_name, role, created_at FROM users WHERE id = ?", (user_id,))
+    c.execute("SELECT id, email, full_name, company_name, role, is_verified, created_at FROM users WHERE id = ?", (user_id,))
     user = c.fetchone()
     conn.close()
     
@@ -127,7 +122,8 @@ def get_user(user_id):
             "full_name": user[2],
             "company_name": user[3],
             "role": user[4],
-            "created_at": user[5]
+            "is_verified": user[5],
+            "created_at": user[6]
         })
     else:
         return jsonify({"error": "User not found"}), 404
@@ -138,64 +134,55 @@ def get_user(user_id):
 def get_suppliers():
     conn = sqlite3.connect('verified.db')
     c = conn.cursor()
-    c.execute("SELECT id, company_name, email, full_name FROM users WHERE role = 'supplier'")
+    c.execute("SELECT id, company_name, email, full_name, is_verified FROM users WHERE role = 'supplier'")
     suppliers = c.fetchall()
     conn.close()
-    return jsonify({"suppliers": [{"id": s[0], "company_name": s[1], "email": s[2], "contact_name": s[3]} for s in suppliers]})
+    return jsonify({"suppliers": [{"id": s[0], "company_name": s[1], "email": s[2], "contact_name": s[3], "is_verified": s[4]} for s in suppliers]})
 
-# ========== VERIFICATION ENDPOINTS ==========
+# ========== RFQ ENDPOINTS ==========
 
-@app.route('/api/verify/submit', methods=['POST'])
-def submit_verification():
+# Initial dummy RFQs
+dummy_rfqs = [
+    {"id": "1", "buyer_name": "ABC Smelters", "commodity": "chrome", "commodity_display": "Chrome Ore", "quantity": "500 MT", "location": "sa", "location_display": "South Africa", "description": "Looking for high-grade chrome ore (42%+ Cr2O3)", "timeline": "30 days", "created_at": "2025-06-04"},
+    {"id": "2", "buyer_name": "Gauteng Fuel", "commodity": "fuel", "commodity_display": "Diesel", "quantity": "50,000 L", "location": "sa", "location_display": "South Africa", "description": "Bulk diesel 50ppm", "timeline": "ASAP", "created_at": "2025-06-03"},
+    {"id": "3", "buyer_name": "Harare Milling", "commodity": "maize", "commodity_display": "Maize", "quantity": "1000 MT", "location": "zim", "location_display": "Zimbabwe", "description": "White maize for milling", "timeline": "45 days", "created_at": "2025-06-02"}
+]
+
+@app.route('/api/rfqs', methods=['GET'])
+def get_rfqs():
+    return jsonify({"rfqs": dummy_rfqs})
+
+@app.route('/api/rfq', methods=['POST'])
+def create_rfq():
     data = request.json
-    user_id = data.get('user_id')
-    cipc_file = data.get('cipc_file', '')
-    director_name = data.get('director_name')
-    director_id = data.get('director_id')
-    
-    verification_id = str(uuid.uuid4())
-    submitted_at = datetime.now().isoformat()
-    
-    conn = sqlite3.connect('verified.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO verifications (id, user_id, cipc_file, director_name, director_id, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-              (verification_id, user_id, cipc_file, director_name, director_id, 'pending', submitted_at))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({"success": True, "message": "Verification submitted. We'll review within 48 hours."})
+    new_rfq = {
+        "id": str(len(dummy_rfqs) + 1),
+        "buyer_name": data.get('buyer_name'),
+        "commodity": data.get('commodity'),
+        "commodity_display": data.get('commodity_display'),
+        "quantity": data.get('quantity'),
+        "location": data.get('location'),
+        "location_display": data.get('location_display'),
+        "description": data.get('description', ''),
+        "timeline": data.get('timeline', 'Negotiable'),
+        "created_at": datetime.now().strftime("%Y-%m-%d")
+    }
+    dummy_rfqs.append(new_rfq)
+    return jsonify({"success": True, "rfq": new_rfq})
 
 # ========== REPORT ENDPOINTS ==========
+
+@app.route('/api/blacklist', methods=['GET'])
+def get_blacklist():
+    return jsonify({"blacklist": [
+        {"company": "Global Fuel Trading", "reason": "Fake CIPC certificate", "date": "2025-05-15"},
+        {"company": "Chrome Holdings Intl", "reason": "Director ID mismatch", "date": "2025-05-10"}
+    ]})
 
 @app.route('/api/report/submit', methods=['POST'])
 def submit_report():
     data = request.json
-    reporter_name = data.get('reporter_name', '')
-    reporter_email = data.get('reporter_email')
-    reported_company = data.get('reported_company')
-    reason = data.get('reason')
-    details = data.get('details', '')
-    
-    report_id = str(uuid.uuid4())
-    submitted_at = datetime.now().isoformat()
-    
-    conn = sqlite3.connect('verified.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO reports (id, reporter_name, reporter_email, reported_company, reason, details, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              (report_id, reporter_name, reporter_email, reported_company, reason, details, 'pending', submitted_at))
-    conn.commit()
-    conn.close()
-    
     return jsonify({"success": True, "message": "Report submitted. We'll investigate."})
-
-@app.route('/api/blacklist', methods=['GET'])
-def get_blacklist():
-    conn = sqlite3.connect('verified.db')
-    c = conn.cursor()
-    c.execute("SELECT reported_company, reason, status, submitted_at FROM reports WHERE status = 'confirmed'")
-    reports = c.fetchall()
-    conn.close()
-    return jsonify({"blacklist": [{"company": r[0], "reason": r[1], "status": r[2], "date": r[3]} for r in reports]})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
