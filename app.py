@@ -109,7 +109,7 @@ def generate_qr_with_logo(data, logo_path=None):
         if os.path.exists(logo_path):
             logo = Image.open(logo_path)
             qr_width, qr_height = qr_img.size
-            logo_size = int(qr_width * 0.50)
+            logo_size = int(qr_width * 0.25)
             logo = logo.resize((logo_size, logo_size), Image.Resampling.LANCZOS)
             
             pos_x = (qr_width - logo_size) // 2
