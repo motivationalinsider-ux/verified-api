@@ -128,18 +128,22 @@ def generate_qr_with_logo(data, logo_path=None):
 def generate_qr(user_id):
     conn = sqlite3.connect('verified.db')
     c = conn.cursor()
-    c.execute("SELECT company_name, is_verified FROM users WHERE id = ?", (user_id,))
+    c.execute("SELECT company_name, role, is_verified FROM users WHERE id = ?", (user_id,))
     user = c.fetchone()
     conn.close()
     
     if not user:
         return jsonify({"error": "User not found"}), 404
     
-    if user[1] != 'verified':
+    if user[2] != 'verified':
         return jsonify({"error": "User not verified yet"}), 400
     
-    # LIVE URL - works on any phone
-    qr_data = f"https://verifiedafrica.netlify.app/supplier-profile.html?id={user_id}&from=qr"
+    if user[1] == 'supplier':
+        profile_page = 'supplier-profile.html'
+    else:
+        profile_page = 'buyer-profile.html'
+    
+    qr_data = f"https://verifiedafrica.netlify.app/{profile_page}?id={user_id}&from=qr"
     qr_img = generate_qr_with_logo(qr_data)
     
     buffer = io.BytesIO()
