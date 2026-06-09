@@ -138,7 +138,8 @@ def generate_qr(user_id):
     if user[1] != 'verified':
         return jsonify({"error": "User not verified yet"}), 400
     
-    qr_data = f"http://localhost:5500/supplier-profile.html?id={user_id}&from=qr"
+    # LIVE URL - works on any phone
+    qr_data = f"https://verifiedafrica.netlify.app/supplier-profile.html?id={user_id}&from=qr"
     qr_img = generate_qr_with_logo(qr_data)
     
     buffer = io.BytesIO()
